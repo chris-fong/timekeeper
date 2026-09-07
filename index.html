@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Timekeeper</title>
+
+<meta name="theme-color" content="#07090a">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Timekeeper">
+<meta name="format-detection" content="telephone=no">
+
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="icon" href="./icons/favicon-32.png" sizes="32x32">
+<link rel="stylesheet" href="./fonts.css">
+<style>
+:root{
+  --ink-0:#07090a;
+  --ink-1:#101416;
+  --ink-2:#161b1e;
+  --rule:#242c30;
+  --rule-hi:#333e44;
+  --dim:#66757c;
+  --dim-2:#8d9ba1;
+  --green:#3be07b;
+  --green-deep:#2b7f4e;
+  --red:#ff4a3d;
+  --amber:#ffc24b;
+
+  --item:17cqh;         /* drum detent height, scales with the panel */
+  --frame:16px;         /* body gutter, before safe-area insets */
+  --pad-v:calc(var(--frame)*2 + env(safe-area-inset-top,0px) + env(safe-area-inset-bottom,0px));
+  --blink-step:500ms;   /* on/off duration when time is up */
+
+  --face:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;
+  --data:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --read:"Doto","IBM Plex Mono",ui-monospace,monospace;
+}
+
+*{box-sizing:border-box}
+html{height:100%}
+body{
+  margin:0;
+  min-height:100vh;
+  min-height:100dvh;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #12181b 0%, var(--ink-0) 62%),
+    var(--ink-0);
+  color:var(--dim-2);
+  font-family:var(--face);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:
+    calc(var(--frame) + env(safe-area-inset-top,0px))
+    calc(var(--frame) + env(safe-area-inset-right,0px))
+    calc(var(--frame) + env(safe-area-inset-bottom,0px))
+    calc(var(--frame) + env(safe-area-inset-left,0px));
+  -webkit-font-smoothing:antialiased;
+
+  /* standalone hardening: no selection, callouts, rubber-band or double-tap zoom */
+  -webkit-user-select:none;user-select:none;
+  -webkit-touch-callout:none;
+  touch-action:manipulation;
+  overscroll-behavior:none;
+}
+*{-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
+
+/* ── 16:9 panel ───────────────────────────── */
+.rig{
+  width:min(100%, calc((100vh - var(--pad-v)) * 16 / 9), 1120px);
+  width:min(100%, calc((100dvh - var(--pad-v)) * 16 / 9), 1120px);
+  aspect-ratio:16 / 9;
+  container-type:size;                 /* children size off this panel */
+  display:grid;
+  grid-template-rows:9% 1fr 20%;       /* rail · main · transport */
+  background:linear-gradient(180deg,var(--ink-1) 0%,#0d1112 100%);
+  border:1px solid var(--rule);
+  border-radius:8px;
+  box-shadow:0 1px 0 rgba(255,255,255,.035) inset, 0 24px 60px -20px #000;
+  overflow:hidden;
+}
+
+/* ── top rail ─────────────────────────────── */
+.rail{
+  display:flex;align-items:center;justify-content:flex-end;
+  padding:0 3cqw;
+  border-bottom:1px solid var(--rule);
+  background:var(--ink-2);
+}
+.lamp{
+  width:max(6px,1.5cqh);height:max(6px,1.5cqh);border-radius:50%;
+  background:#2a3438;box-shadow:0 0 0 1px #000 inset;
+}
+.rig[data-state="running"] .lamp{background:var(--green);box-shadow:0 0 8px var(--green)}
+.rig[data-state="paused"]  .lamp{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.rig[data-state="over"]    .lamp{background:var(--red);box-shadow:0 0 10px var(--red);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+/* ── main split ───────────────────────────── */
+.main{display:grid;grid-template-columns:1.35fr 1fr;min-height:0}
+
+.readout{
+  display:flex;flex-direction:column;justify-content:center;
+  padding:0 4cqw;
+  min-width:0;
+  border-right:1px solid var(--rule);
+  background:radial-gradient(85% 130% at 50% 45%, #131a1c 0%, #0b0f10 100%);
+}
+.digits{
+  display:flex;align-items:baseline;justify-content:center;
+  white-space:nowrap;
+  font-family:var(--read);font-weight:700;line-height:1;letter-spacing:.02em;
+  font-size:clamp(40px,9vw,120px);
+  font-size:min(12.5cqw,32cqh);
+  color:var(--green-deep);
+  transition:color .18s linear,font-size .22s ease-out;
+}
+.digits.is-long{font-size:min(7.6cqw,20cqh)}
+.sign{flex:none;padding-right:.22em;display:none}   /* no reserved space while counting down */
+.rig[data-state="running"] .digits{color:var(--green);text-shadow:0 0 22px rgba(59,224,123,.28)}
+.rig[data-state="over"] .digits{color:var(--red);text-shadow:0 0 22px rgba(255,74,61,.3)}
+.rig[data-state="paused"] .digits{color:var(--amber);text-shadow:0 0 22px rgba(255,194,75,.28)}
+.rig[data-state="over"] .sign,
+.rig[data-state="paused"][data-over] .sign{display:block}
+
+.digits.blink{animation:blink calc(var(--blink-step)*2) linear 3}
+@keyframes blink{0%,49.99%{opacity:0}50%,100%{opacity:1}}
+
+/* depletion scale */
+.scale{
+  position:relative;height:2.5cqh;margin-top:5cqh;
+  border-top:1px solid var(--rule);
+}
+.scale::after{                      /* division ticks */
+  content:"";position:absolute;inset:0 0 auto;height:1.2cqh;
+  background-image:repeating-linear-gradient(90deg,var(--rule-hi) 0 1px,transparent 1px 10%);
+}
+.fill{
+  position:absolute;top:-1px;left:0;height:2px;width:100%;
+  background:var(--green);box-shadow:0 0 10px rgba(59,224,123,.5);
+  transition:width .2s linear;
+}
+.rig[data-state="idle"] .fill{background:var(--green-deep);box-shadow:none}
+.rig[data-state="paused"] .fill{background:var(--amber);box-shadow:0 0 10px rgba(255,194,75,.5)}
+.rig[data-over] .fill{background:var(--rule-hi);box-shadow:none}   /* overtime: scale goes inert */
+
+/* ── setter (idle only) ───────────────────── */
+.setter{
+  display:grid;grid-template-columns:1fr 1fr;gap:1px;
+  background:var(--rule);
+  min-height:0;
+}
+.drum{
+  background:var(--ink-1);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:1.5cqh;min-height:0;
+}
+.drum-label{
+  font-size:11px;font-size:max(8px,2.2cqh);
+  letter-spacing:.2em;text-transform:uppercase;color:var(--dim);
+}
+.drum-wrap{position:relative;width:100%}
+.wheel{
+  position:relative;
+  height:calc(var(--item)*3);
+  overflow-y:auto;
+  scroll-snap-type:y mandatory;
+  overscroll-behavior:contain;
+  scrollbar-width:none;
+  touch-action:pan-y;                  /* wheels pan; page stays put */
+  -webkit-mask-image:linear-gradient(180deg,transparent 2%,#000 33%,#000 67%,transparent 98%);
+  mask-image:linear-gradient(180deg,transparent 2%,#000 33%,#000 67%,transparent 98%);
+  outline-offset:-2px;
+}
+.wheel::-webkit-scrollbar{display:none}
+.track{padding-block:var(--item)}      /* = (visible rows - 1)/2 × item */
+.num{
+  height:var(--item);
+  display:flex;align-items:center;justify-content:center;
+  scroll-snap-align:center;
+  font-family:var(--data);font-weight:400;
+  font-size:18px;font-size:max(11px,4.6cqh);
+  color:#3c474c;cursor:pointer;
+  transition:color .12s linear;
+}
+.num.is-on{color:var(--green);font-weight:500}
+.detent{
+  position:absolute;left:12%;right:12%;top:50%;height:var(--item);
+  transform:translateY(-50%);
+  border-top:1px solid rgba(59,224,123,.35);
+  border-bottom:1px solid rgba(59,224,123,.35);
+  background:rgba(59,224,123,.045);
+  pointer-events:none;
+}
+
+/* ── running / paused: setter drops out, readout takes the width ── */
+.rig:not([data-state="idle"]) .setter{display:none}
+.rig:not([data-state="idle"]) .main{grid-template-columns:1fr}
+.rig:not([data-state="idle"]) .readout{border-right:0}
+.rig:not([data-state="idle"]) .digits{font-size:min(18cqw,46cqh)}
+.rig:not([data-state="idle"]) .digits.is-long{font-size:min(11cqw,28cqh)}
+
+/* ── transport bar ────────────────────────── */
+.controls{
+  display:flex;align-items:center;justify-content:center;gap:5cqw;
+  background:var(--ink-2);
+  border-top:1px solid var(--rule);
+}
+.ctl{
+  display:none;                       /* state rules below decide what shows */
+  align-items:center;justify-content:center;
+  width:max(38px,15cqh);height:max(38px,15cqh);
+  padding:0;border-radius:50%;cursor:pointer;
+  border:1px solid var(--rule-hi);
+  background:rgba(255,255,255,.02);
+  color:var(--green);
+  transition:background .14s linear,color .14s linear,border-color .14s linear,transform .09s ease-out;
+}
+.ctl svg{width:40%;height:40%;fill:currentColor}
+.ctl .glyph-play{transform:translateX(6%)}   /* optical centring */
+.ctl:hover{background:rgba(255,255,255,.07);background:color-mix(in srgb,currentColor 13%,transparent);border-color:currentColor}
+.ctl:active{transform:scale(.94)}
+.ctl:focus-visible{outline:2px solid currentColor;outline-offset:3px}
+.ctl:disabled{color:#394347;border-color:var(--rule);background:transparent;cursor:not-allowed}
+
+.rig[data-state="paused"] .ctl{color:var(--amber)}
+.rig[data-state="over"] .ctl{color:var(--red)}
+#stop{color:var(--dim);border-color:var(--rule)}
+#stop:hover{color:var(--dim-2)}
+
+.rig[data-state="idle"] #play,
+.rig[data-state="paused"] #play,
+.rig[data-state="paused"] #stop,
+.rig[data-state="running"] #pause,
+.rig[data-state="over"] #pause{display:flex}
+
+/* iOS keeps :hover latched after a tap — neutralise it on touch pointers */
+@media (hover:none){
+  .ctl:hover{background:rgba(255,255,255,.02);border-color:var(--rule-hi)}
+  #stop:hover{color:var(--dim)}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition-duration:.01ms !important}
+  .rig[data-state="over"] .lamp{animation:none}
+}
+</style>
+</head>
+<body>
+
+<main class="rig" id="rig" data-state="idle">
+  <header class="rail"><i class="lamp"></i></header>
+
+  <div class="main">
+    <section class="readout">
+      <div class="digits" id="digits" role="timer" aria-live="off">
+        <span class="sign">&minus;</span><span id="value">05:00</span>
+      </div>
+      <div class="scale"><div class="fill" id="fill"></div></div>
+    </section>
+
+    <section class="setter" id="setter">
+      <div class="drum">
+        <div class="drum-label" id="labMin">Minutes</div>
+        <div class="drum-wrap">
+          <div class="wheel" id="wheelMin" role="spinbutton" tabindex="0"
+               aria-labelledby="labMin" aria-valuemin="0" aria-valuemax="99" aria-valuenow="5">
+            <div class="track"></div>
+          </div>
+          <div class="detent"></div>
+        </div>
+      </div>
+      <div class="drum">
+        <div class="drum-label" id="labSec">Seconds</div>
+        <div class="drum-wrap">
+          <div class="wheel" id="wheelSec" role="spinbutton" tabindex="0"
+               aria-labelledby="labSec" aria-valuemin="0" aria-valuemax="59" aria-valuenow="0">
+            <div class="track"></div>
+          </div>
+          <div class="detent"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="controls">
+    <button class="ctl" id="play" type="button" aria-label="Start">
+      <svg class="glyph-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2 19 12 8 18.8Z"/></svg>
+    </button>
+    <button class="ctl" id="pause" type="button" aria-label="Pause">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h3.1v14H8zM12.9 5H16v14h-3.1z"/></svg>
+    </button>
+    <button class="ctl" id="stop" type="button" aria-label="Reset">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5h11v11h-11z"/></svg>
+    </button>
+  </div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const BEEP = true;                    // set false to run the alert silently
+  const BLINK_MS = 3000;                // 3 blinks x 2 x --blink-step
+
+  /* Wall-clock, not performance.now(): iOS suspends rAF when the app is
+     backgrounded or the screen locks, and epoch time survives that intact. */
+  const now = () => Date.now();
+
+  const rig     = document.getElementById('rig');
+  const digits  = document.getElementById('digits');
+  const valueEl = document.getElementById('value');
+  const fill    = document.getElementById('fill');
+  const btnPlay = document.getElementById('play');
+  const btnPause= document.getElementById('pause');
+  const btnStop = document.getElementById('stop');
+
+  /* ── drums ─────────────────────────────── */
+  function buildWheel(el, max){
+    const track = el.querySelector('.track');
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i <= max; i++){
+      const d = document.createElement('div');
+      d.className = 'num';
+      d.textContent = String(i).padStart(2,'0');
+      d.dataset.v = i;
+      frag.appendChild(d);
+    }
+    track.appendChild(frag);
+    el.dataset.max = max;
+    el.dataset.value = 0;
+
+    let ticking = false;
+    el.addEventListener('scroll', () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => { ticking = false; syncWheel(el); });
+    }, {passive:true});
+
+    // Momentum scrolling settles well after the last scroll event on iOS.
+    if ('onscrollend' in window)
+      el.addEventListener('scrollend', () => syncWheel(el), {passive:true});
+
+    el.addEventListener('keydown', e => {
+      const step = {ArrowUp:-1, ArrowDown:1, PageUp:-5, PageDown:5}[e.key];
+      let v = null;
+      if (step !== undefined) v = Number(el.dataset.value) + step;
+      else if (e.key === 'Home') v = 0;
+      else if (e.key === 'End')  v = max;
+      if (v === null) return;
+      e.preventDefault();
+      setWheel(el, Math.max(0, Math.min(max, v)), true);
+    });
+
+    track.addEventListener('click', e => {
+      const n = e.target.closest('.num');
+      if (n) setWheel(el, Number(n.dataset.v), true);
+    });
+  }
+
+  const itemH = el => el.querySelector('.num').getBoundingClientRect().height;
+
+  function setWheel(el, v, smooth){
+    const h = itemH(el);
+    el.dataset.value = v;
+    if (h) el.scrollTo({top: v * h, behavior: smooth ? 'smooth' : 'auto'});
+    paintWheel(el, v);
+  }
+
+  function syncWheel(el){
+    const h = itemH(el);
+    if (!h) return;                       // drums hidden — scrollTop is meaningless
+    const v = Math.max(0, Math.min(Number(el.dataset.max), Math.round(el.scrollTop / h)));
+    if (Number(el.dataset.value) !== v){
+      el.dataset.value = v;
+      paintWheel(el, v);
+    }
+  }
+
+  function paintWheel(el, v){
+    el.setAttribute('aria-valuenow', v);
+    el.setAttribute('aria-valuetext', String(v).padStart(2,'0'));
+    const on = el.querySelector('.num.is-on');
+    if (on) on.classList.remove('is-on');
+    const next = el.querySelector('.num[data-v="' + v + '"]');
+    if (next) next.classList.add('is-on');
+    if (state === 'idle') showIdle();
+  }
+
+  const wMin = document.getElementById('wheelMin');
+  const wSec = document.getElementById('wheelSec');
+  buildWheel(wMin, 99);
+  buildWheel(wSec, 59);
+
+  // re-seat both drums on their stored values (hidden drums lose scrollTop)
+  function resnap(){
+    if (state !== 'idle') return;
+    setWheel(wMin, Number(wMin.dataset.value), false);
+    setWheel(wSec, Number(wSec.dataset.value), false);
+  }
+
+  const setMs = () =>
+    (Number(wMin.dataset.value) * 60 + Number(wSec.dataset.value)) * 1000;
+
+  /* ── formatting ────────────────────────── */
+  function fmt(totalSec){
+    const s = Math.abs(totalSec);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    const p = n => String(n).padStart(2,'0');
+    return h ? h + ':' + p(m) + ':' + p(ss) : p(m) + ':' + p(ss);
+  }
+
+  /* ── timer ─────────────────────────────── */
+  let state = 'idle';        // idle | running | paused | over
+  let deadline = 0;          // Date.now() timestamp of zero
+  let stored = 0;            // remaining ms while paused (negative = overtime)
+  let totalMs = 0;
+  let blinked = false;
+  let rafId = 0;
+  let lastText = '';
+
+  function setState(s){
+    state = s;
+    rig.dataset.state = s;
+    btnPlay.setAttribute('aria-label', s === 'paused' ? 'Resume' : 'Start');
+    btnPlay.disabled = (s === 'idle' && setMs() === 0);
+  }
+
+  function render(text, frac, over){
+    if (text !== lastText){
+      valueEl.textContent = text;
+      digits.classList.toggle('is-long', text.length > 5);
+      document.title = (over ? '\u2212' : '') + text + ' \u00b7 Timekeeper';
+      lastText = text;
+    }
+    fill.style.width = over ? '100%' : (frac * 100).toFixed(2) + '%';
+    if (over) rig.setAttribute('data-over',''); else rig.removeAttribute('data-over');
+  }
+
+  function showIdle(){
+    lastText = '';
+    render(fmt(Math.round(setMs()/1000)), 1, false);
+    btnPlay.disabled = setMs() === 0;
+  }
+
+  function tick(){
+    const diff = deadline - now();
+    if (diff > 0){
+      render(fmt(Math.ceil(diff/1000)), totalMs ? diff/totalMs : 0, false);
+    } else {
+      if (!blinked){
+        blinked = true;
+        setState('over');
+        // If we were backgrounded straight through zero the alert window is
+        // gone; go to overtime silently rather than firing it late.
+        if (-diff <= BLINK_MS){
+          digits.classList.remove('blink');
+          void digits.offsetWidth;            // restart the animation
+          digits.classList.add('blink');
+          alertSeq();
+        }
+      }
+      render(fmt(Math.floor(-diff/1000)), 1, true);
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start(){
+    if (state === 'idle'){
+      totalMs = setMs();
+      if (!totalMs) return;
+      blinked = false;
+      deadline = now() + totalMs;
+    } else if (state === 'paused'){
+      deadline = now() + stored;
+    } else return;
+    setState(blinked ? 'over' : 'running');
+    keepAwake(true);
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function pause(){
+    if (state !== 'running' && state !== 'over') return;
+    stored = deadline - now();
+    cancelAnimationFrame(rafId);
+    keepAwake(false);
+    setState('paused');
+  }
+
+  function reset(){
+    cancelAnimationFrame(rafId);
+    digits.classList.remove('blink');
+    keepAwake(false);
+    blinked = false;
+    stored = 0;
+    setState('idle');
+    showIdle();
+    requestAnimationFrame(resnap);            // drums are visible again
+  }
+
+  /* ── screen wake lock ──────────────────── */
+  let lock = null;
+  async function keepAwake(on){
+    try{
+      if (on){
+        if (!lock && 'wakeLock' in navigator){
+          lock = await navigator.wakeLock.request('screen');
+          lock.addEventListener('release', () => { lock = null; });
+        }
+      } else if (lock){
+        const l = lock; lock = null; await l.release();
+      }
+    } catch(_){ /* denied or unsupported — the timer still runs */ }
+  }
+
+  /* ── alert tone ────────────────────────── */
+  let ac = null;
+  function primeAudio(){                  // must run inside a user gesture
+    if (ac || !BEEP) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    ac = new Ctx();
+    const s = ac.createBufferSource();     // silent buffer unlocks iOS output
+    s.buffer = ac.createBuffer(1, 1, 22050);
+    s.connect(ac.destination);
+    s.start(0);
+  }
+  function tone(offset){
+    const t = ac.currentTime + offset;
+    const osc = ac.createOscillator(), gain = ac.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(880, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+    gain.gain.setValueAtTime(0.22, t + 0.09);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    osc.connect(gain).connect(ac.destination);
+    osc.start(t); osc.stop(t + 0.2);
+  }
+  function alertSeq(){                     // on the three lit blink phases
+    if (!ac) return;
+    if (ac.state === 'suspended') ac.resume();
+    [0.5, 1.5, 2.5].forEach(tone);
+  }
+
+  document.addEventListener('pointerdown', primeAudio, {once:true});
+  document.addEventListener('gesturestart', e => e.preventDefault());  // no pinch zoom
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (state === 'running' || state === 'over') keepAwake(true);
+    resnap();
+  });
+
+  btnPlay.addEventListener('click', start);
+  btnPause.addEventListener('click', pause);
+  btnStop.addEventListener('click', reset);
+  digits.addEventListener('animationend', () => digits.classList.remove('blink'));
+
+  // container units change with the panel — re-snap both drums
+  let rz;
+  const resnapSoon = () => { clearTimeout(rz); rz = setTimeout(resnap, 120); };
+  window.addEventListener('resize', resnapSoon);
+  window.addEventListener('orientationchange', resnapSoon);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resnapSoon);
+
+  // default 05:00
+  requestAnimationFrame(() => {
+    setWheel(wMin, 5, false);
+    setWheel(wSec, 0, false);
+    setState('idle');
+    showIdle();
+  });
+})();
+
+if ('serviceWorker' in navigator)
+  window.addEventListener('load', () =>
+    navigator.serviceWorker.register('./sw.js').catch(() => {}));
+</script>
+</body>
+</html>
