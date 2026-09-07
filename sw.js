@@ -1,6 +1,6 @@
 /* Timekeeper service worker — precache the whole shell, serve cache-first.
    Bump CACHE on every asset change; the old cache is dropped on activate. */
-const CACHE = "timekeeper-v2";
+const CACHE = "timekeeper-v3";
 
 const ASSETS = [
   "./",

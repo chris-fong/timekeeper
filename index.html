@@ -35,6 +35,8 @@
   --frame:16px;         /* body gutter, before safe-area insets */
   --pad-v:calc(var(--frame)*2 + env(safe-area-inset-top,0px) + env(safe-area-inset-bottom,0px));
   --blink-step:500ms;   /* on/off duration when time is up */
+  --dur:.38s;                                /* setter retract / readout zoom */
+  --ease:cubic-bezier(.22,.72,.2,1);
 
   --face:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;
   --data:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -103,7 +105,10 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
 @keyframes pulse{50%{opacity:.25}}
 
 /* ── main split ───────────────────────────── */
-.main{display:grid;grid-template-columns:1.35fr 1fr;min-height:0}
+.main{
+  display:grid;grid-template-columns:1.35fr 1fr;min-height:0;
+  transition:grid-template-columns var(--dur) var(--ease);
+}
 
 .readout{
   display:flex;flex-direction:column;justify-content:center;
@@ -111,6 +116,7 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
   min-width:0;
   border-right:1px solid var(--rule);
   background:radial-gradient(85% 130% at 50% 45%, #131a1c 0%, #0b0f10 100%);
+  transition:border-right-color var(--dur) var(--ease);
 }
 .digits{
   display:flex;align-items:baseline;justify-content:center;
@@ -119,7 +125,7 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
   font-size:clamp(40px,9vw,120px);
   font-size:min(12.5cqw,32cqh);
   color:var(--green-deep);
-  transition:color .18s linear,font-size .22s ease-out;
+  transition:color .18s linear,font-size var(--dur) var(--ease);
 }
 .digits.is-long{font-size:min(7.6cqw,20cqh)}
 .sign{flex:none;padding-right:.22em;display:none}   /* no reserved space while counting down */
@@ -154,12 +160,15 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
 .setter{
   display:grid;grid-template-columns:1fr 1fr;gap:1px;
   background:var(--rule);
-  min-height:0;
+  min-height:0;min-width:0;overflow:hidden;
+  opacity:1;transform:translateX(0);
+  /* entering: hold the fade until the column has opened */
+  transition:opacity .24s linear .13s, transform var(--dur) var(--ease);
 }
 .drum{
   background:var(--ink-1);
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:1.5cqh;min-height:0;
+  gap:1.5cqh;min-height:0;min-width:0;
 }
 .drum-label{
   font-size:11px;font-size:max(8px,2.2cqh);
@@ -199,10 +208,14 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
   pointer-events:none;
 }
 
-/* ── running / paused: setter drops out, readout takes the width ── */
-.rig:not([data-state="idle"]) .setter{display:none}
-.rig:not([data-state="idle"]) .main{grid-template-columns:1fr}
-.rig:not([data-state="idle"]) .readout{border-right:0}
+/* ── running / paused: setter retracts, readout takes the width ── */
+.rig:not([data-state="idle"]) .setter{
+  opacity:0;transform:translateX(4cqw);pointer-events:none;
+  /* leaving: fade out first, then the column closes underneath */
+  transition:opacity .16s linear, transform var(--dur) var(--ease);
+}
+.rig:not([data-state="idle"]) .main{grid-template-columns:1fr 0fr}
+.rig:not([data-state="idle"]) .readout{border-right-color:transparent}
 .rig:not([data-state="idle"]) .digits{font-size:min(18cqw,46cqh)}
 .rig:not([data-state="idle"]) .digits.is-long{font-size:min(11cqw,28cqh)}
 
@@ -317,6 +330,7 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
   const digits  = document.getElementById('digits');
   const valueEl = document.getElementById('value');
   const fill    = document.getElementById('fill');
+  const setter  = document.getElementById('setter');
   const btnPlay = document.getElementById('play');
   const btnPause= document.getElementById('pause');
   const btnStop = document.getElementById('stop');
@@ -431,6 +445,8 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
     state = s;
     rig.dataset.state = s;
     btnPlay.setAttribute('aria-label', s === 'paused' ? 'Resume' : 'Start');
+    setter.inert = (s !== 'idle');        // no focus / no screen reader while retracted
+    setter.setAttribute('aria-hidden', String(s !== 'idle'));
     btnPlay.disabled = (s === 'idle' && setMs() === 0);
   }
 
@@ -504,6 +520,10 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
     stored = 0;
     setState('idle');
     showIdle();
+    setTimeout(() => {                    // width was 0 — restore both snap positions
+      setWheel(wMin, Number(wMin.dataset.value), false);
+      setWheel(wSec, Number(wSec.dataset.value), false);
+    }, 420);
     requestAnimationFrame(resnap);            // drums are visible again
   }
 
